@@ -150,7 +150,7 @@
  *
  * ```hbs
  * <div class="foo">
- *   {{#eq
+ *   {{#e-q
  *     eqSlices=(hash
  *       0   = 's'
  *       500 = 'm'

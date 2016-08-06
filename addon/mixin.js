@@ -5,12 +5,11 @@ import Ember from 'ember';
 
 const {
   computed,
+  inject: {service},
   Mixin,
   on,
   run: {next, scheduleOnce}
 } = Ember;
-
-import eqTrigger from 'ember-element-query/trigger';
 
 /**
  *
@@ -65,7 +64,7 @@ export default Mixin.create({
   },
 
   /**
-   * ember-element-query will trigger the `eq-update` event on the
+   * ember-element-query will trigger the `shouldUpdate` event on the
    * transition end event of any child element whose HTML selector is listed
    * in this array.
    *
@@ -75,6 +74,11 @@ export default Mixin.create({
    *
    * */
   eqTransitionSelectors: null,
+
+
+
+  // ----- Services -----
+  eqService: service('eq'),
 
 
 
@@ -95,7 +99,7 @@ export default Mixin.create({
    * element.
    *
    * Initially is `null`. Gets updated by `_eqResizeHandler` on `resize` and
-   * `eq-update` events.
+   * `shouldUpdate` events.
    *
    * @property eqWidth
    * @type Number
@@ -106,9 +110,24 @@ export default Mixin.create({
 
 
   /**
-   * A callback triggered by `resize` and `eq-update` events.
+   * An integer referencing the current height in pixels of the component's
+   * element.
    *
-   * Is initially null, is assigned to from `_setupEqResize`.
+   * Initially is `null`. Gets updated by `_eqResizeHandler` on `resize` and
+   * `shouldUpdate` events.
+   *
+   * @property eqHeight
+   * @type Number
+   * @final
+   */
+  eqHeight: null,
+
+
+
+  /**
+   * A callback triggered by `resize` and `shouldUpdate` events.
+   *
+   * Is initially null, is assigned to from `_eqSetupResizeHandler`.
    *
    * @method _eqResizeHandler
    * @private
@@ -407,7 +426,7 @@ export default Mixin.create({
    * @computed
    * @final
    * */
-  eqTransitionEventName: computed(function (){
+  eqTransitionEventName: computed(function () {
     const el = document.createElement('fakeelement');
     const transitions = {
       'transition':       'transitionend',
@@ -423,6 +442,77 @@ export default Mixin.create({
 
     return transitions[transitionKey];
   }),
+
+
+  /**
+   * Returns bound eqService.trigger method.
+   *
+   * Used to pass into addEventListener/removeEventListener pairs.
+   *
+   * @property eqTrigger
+   * @type Function
+   * @computed
+   * @final
+   * */
+  eqTrigger: computed(function () {
+    const eqService = this.get('eqService');
+
+    return () => eqService.get('trigger').bind(eqService);
+  }),
+
+  /**
+   * A hash containing useful properties. Used as return value for `{{yield}}`.
+   *
+   * Properties:
+   *
+   * * `eqBPCurrent`
+   * * `eqBPCurrentIndex`
+   * * `eqBPsBetween`
+   * * `eqBPsFrom`
+   * * `eqBPsTo`
+   * * `eqBreakpointsAsc`
+   * * `eqBreakpointsDesc`
+   * * `eqSliceCurrent`
+   * * `eqSlices`
+   * * `eqSlicesFrom`
+   * * `eqSlicesTo`
+   * * `eqWidth`
+   *
+   * @property eqYieldable
+   * @type {Object}
+   * @computed eqBPCurrent, eqBPCurrentIndex, eqBPsBetween, eqBPsFrom, eqBPsTo, eqBreakpointsAsc, eqBreakpointsDesc, eqSliceCurrent, eqSlices, eqSlicesFrom, eqSlicesTo, eqWidth
+   * @final
+   * */
+  eqYieldable: computed(
+    'eqBPCurrent',
+    'eqBPCurrentIndex',
+    'eqBPsBetween',
+    'eqBPsFrom',
+    'eqBPsTo',
+    'eqBreakpointsAsc',
+    'eqBreakpointsDesc',
+    'eqSliceCurrent',
+    'eqSlices',
+    'eqSlicesFrom',
+    'eqSlicesTo',
+    'eqWidth',
+    function () {
+      return this.getProperties(
+        'eqBPCurrent',
+        'eqBPCurrentIndex',
+        'eqBPsBetween',
+        'eqBPsFrom',
+        'eqBPsTo',
+        'eqBreakpointsAsc',
+        'eqBreakpointsDesc',
+        'eqSliceCurrent',
+        'eqSlices',
+        'eqSlicesFrom',
+        'eqSlicesTo',
+        'eqWidth'
+      );
+    }
+  ),
 
 
 
@@ -452,19 +542,25 @@ export default Mixin.create({
   },
 
   /**
-   * Sets `eqWidth` to current element width.
+   * Sets `eqWidth` and `eqHeight` to current element sizes.
    *
-   * @method updateEqWidth
-   * @returns {Number} Current element width
+   * @method eqUpdateSizes
+   * @returns {Object} A hash with `width` and `height` properties.
    * */
-  updateEqWidth() {
+  eqUpdateSizes() {
     const element = this.get('element');
 
     if (!element) {
       return;
     }
 
-    this.set('eqWidth', element.offsetWidth);
+    this.set('eqWidth',  element.offsetWidth);
+    this.set('eqHeight', element.offsetHeight);
+
+    return {
+      width:  element.offsetWidth,
+      height: element.offsetHeight
+    };
   },
 
 
@@ -473,7 +569,7 @@ export default Mixin.create({
 
   /**
    * On `didInsertElement`, define `_eqResizeHandler` and have it called on
-   * `resize` and `eq-update` events.
+   * `resize` and `shouldUpdate` events.
    *
    * @method _eqSetupResizeHandler
    * @on
@@ -481,13 +577,13 @@ export default Mixin.create({
    * */
   _eqSetupResizeHandler: on('didInsertElement', function () {
     const _eqResizeHandler = () => {
-      scheduleOnce('afterRender', this, this.updateEqWidth);
-      next(this, this.updateEqWidth);
+      scheduleOnce('afterRender', this, this.eqUpdateSizes);
+      next(this, this.eqUpdateSizes);
     };
 
     this.setProperties({_eqResizeHandler});
-    window.addEventListener('resize',    _eqResizeHandler, true);
-    window.addEventListener('eq-update', _eqResizeHandler, true);
+    window.addEventListener('resize', _eqResizeHandler, true);
+    this.get('eqService').on('shouldUpdate', this, _eqResizeHandler);
   }),
 
   /**
@@ -503,7 +599,7 @@ export default Mixin.create({
 
   /**
    * On `willDestroyElement`, remove `_eqResizeHandler` from listening to
-   * `resize` and `eq-update` events.
+   * `resize` and `shouldUpdate` events.
    *
    * @method _eqSetupResizeHandler
    * @on
@@ -511,12 +607,12 @@ export default Mixin.create({
    * */
   _eqTeardownEqResizeHandler: on('willDestroyElement', function () {
     const _eqResizeHandler = this.get('_eqResizeHandler');
-    window.removeEventListener('resize',    _eqResizeHandler, true);
-    window.removeEventListener('eq-update', _eqResizeHandler, true);
+    window.removeEventListener('resize', _eqResizeHandler, true);
+    this.get('eqService').off('shouldUpdate', this, _eqResizeHandler);
   }),
 
   /**
-   * On `didInsertElement`, set up the `eq-update` event to trigger on
+   * On `didInsertElement`, set up the `shouldUpdate` event to trigger on
    * transition end of child elements whose selectors have been defined
    * in `eqTransitionEventName`.
    *
@@ -536,6 +632,8 @@ export default Mixin.create({
       return;
     }
 
+    const eqTrigger = this.get('eqTrigger');
+
     eqTransitionSelectors
       .forEach(className => {
         this
@@ -547,7 +645,7 @@ export default Mixin.create({
 
   /**
    * On `willDestroyElement`, remove `_eqResizeHandler` from listening to
-   * `resize` and `eq-update` events.
+   * `resize` and `shouldUpdate` events.
    *
    * @method _eqSetupTransitions
    * @on
@@ -555,7 +653,7 @@ export default Mixin.create({
    * */
   _eqTeardownTransitions: on('willDestroyElement', function () {
     const eqTransitionEventName = this.get('eqTransitionEventName');
-    const eqTransitionSelectors   = this.get('eqTransitionSelectors');
+    const eqTransitionSelectors = this.get('eqTransitionSelectors');
 
     if (
       !eqTransitionEventName
@@ -564,6 +662,8 @@ export default Mixin.create({
     ) {
       return;
     }
+
+    const eqTrigger = this.get('eqTrigger');
 
     eqTransitionSelectors
       .forEach(className => {

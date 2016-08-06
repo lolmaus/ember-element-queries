@@ -406,7 +406,7 @@ describe('EqMixin', function() {
 
     subject.set('element', {offsetWidth: 372});
 
-    subject.updateEqWidth();
+    subject.eqUpdateSizes();
 
     const width = subject.get('eqWidth');
 
